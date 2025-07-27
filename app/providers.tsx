@@ -19,7 +19,7 @@ export function Providers({ children }: { children: ReactNode }) {
                 // Clear router cache (protected routes)
                 router.refresh()
             }}
-            Link={Link}
+            Link={Link as any}
             apiKey={true}
             social={{
             providers: ["google"]
