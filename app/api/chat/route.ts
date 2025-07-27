@@ -9,16 +9,23 @@ export interface Message {
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKeyHeader = req.headers.get('api-key')
+    const authHeader = req.headers.get('authorization')
+    const apiKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized: Missing Bearer token' },
+        { status: 401 }
+      )
+    }
+
     const result = await auth.api.verifyApiKey({
-      body: {
-        key: apiKeyHeader,
-      }
+      body: { key: apiKey }
     })
 
     if (!result?.valid) {
       return NextResponse.json(
-        { success: false, error: 'Unauthorized: Invalid or missing API key' },
+        { success: false, error: 'Unauthorized: Invalid API key' },
         { status: 401 }
       )
     }
@@ -28,7 +35,6 @@ export async function POST(req: NextRequest) {
       messages: Message[]
       input: string
     }
-
     const messagesWithHistory = [
       { content: prompt, role: 'system' },
       ...messages,
