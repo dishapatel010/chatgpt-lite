@@ -19,9 +19,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const result = await auth.api.verifyApiKey({
-      body: { key: uapiKey }
-    })
+    const result = await auth.api.verifyApiKey({ body: { key: uapiKey } })
 
     if (!result?.valid) {
       return NextResponse.json(
@@ -30,16 +28,37 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { prompt, messages, input } = (await req.json()) as {
-      prompt: string
-      messages: Message[]
-      input: string
+    const body = await req.json()
+
+    const rawMessages = body.messages
+    if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid request: messages array is required' },
+        { status: 400 }
+      )
     }
-    const messagesWithHistory = [
-      { content: prompt, role: 'system' },
-      ...messages,
-      { content: input, role: 'user' }
-    ]
+
+    const filteredMessages: Message[] = rawMessages.filter(
+      (m: any) =>
+        m &&
+        typeof m.role === 'string' &&
+        typeof m.content === 'string' &&
+        ['user', 'assistant', 'system'].includes(m.role)
+    )
+
+    if (!filteredMessages.find((m) => m.role === 'user')) {
+      return NextResponse.json(
+        { success: false, error: 'At least one user message is required.' },
+        { status: 400 }
+      )
+    }
+
+    const systemMessage: Message = {
+      role: 'system',
+      content: 'You are a helpful assistant.'
+    }
+
+    const messagesWithHistory: Message[] = [systemMessage, ...filteredMessages]
 
     const { apiUrl, apiKey, model } = getApiConfig()
     const stream = await getOpenAIStream(apiUrl, apiKey, model, messagesWithHistory)
@@ -73,7 +92,7 @@ const getApiConfig = () => {
     }
     apiUrl = `${apiBaseUrl}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`
     apiKey = process.env.AZURE_OPENAI_API_KEY || ''
-    model = '' // Azure decides based on deployment name
+    model = '' // Azure uses deployment name, not model string
   } else {
     let apiBaseUrl = process.env.OPENAI_API_BASE_URL || 'https://api.openai.com'
     if (apiBaseUrl && apiBaseUrl.endsWith('/')) {
@@ -103,14 +122,14 @@ const getOpenAIStream = async (
     },
     method: 'POST',
     body: JSON.stringify({
-      model: model,
-      frequency_penalty: 0,
-      max_tokens: 4000,
-      messages: messages,
-      presence_penalty: 0,
+      model,
+      messages,
       stream: true,
       temperature: 0.5,
-      top_p: 0.95
+      top_p: 0.95,
+      frequency_penalty: 0,
+      presence_penalty: 0,
+      max_tokens: 4000
     })
   })
 
@@ -119,7 +138,7 @@ const getOpenAIStream = async (
     const responseBody = await res.text()
     console.error(`OpenAI API response error: ${responseBody}`)
     throw new Error(
-      `The OpenAI API has encountered an error with a status code of ${res.status} ${statusText}: ${responseBody}`
+      `OpenAI API error ${res.status} ${statusText}: ${responseBody}`
     )
   }
 
@@ -138,8 +157,7 @@ const getOpenAIStream = async (
             const json = JSON.parse(data)
             const text = json.choices[0]?.delta?.content
             if (text !== undefined) {
-              const queue = encoder.encode(text)
-              controller.enqueue(queue)
+              controller.enqueue(encoder.encode(text))
             } else {
               console.error('Received undefined content:', json)
             }
@@ -153,7 +171,7 @@ const getOpenAIStream = async (
       const parser = createParser(onParse)
 
       for await (const chunk of res.body as any) {
-        const str = decoder.decode(chunk).replace('[DONE]\n', '[DONE]\n\n')
+        const str = decoder.decode(chunk)
         parser.feed(str)
       }
     }
