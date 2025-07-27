@@ -9,7 +9,7 @@ export interface Message {
 
 export async function POST(req: NextRequest) {
   try {
-    const apiKeyHeader = req.headers.get('x-api-key')
+    const apiKeyHeader = req.headers.get('api-key')
     const result = await auth.api.verifyApiKey({
       body: {
         key: apiKeyHeader,
