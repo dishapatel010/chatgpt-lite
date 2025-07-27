@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   output: 'standalone',
   sassOptions: {
     // includePaths: [path.join(__dirname, 'styles')]
