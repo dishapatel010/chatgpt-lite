@@ -9,7 +9,7 @@ import {
   useRef,
   useState
 } from 'react'
-import { Flex, Heading, IconButton, ScrollArea, Tooltip, Button } from '@radix-ui/themes'
+import { Flex, Heading, IconButton, ScrollArea, Tooltip, Button, TextField } from '@radix-ui/themes'
 import ContentEditable from 'react-contenteditable'
 import { AiOutlineClear, AiOutlineLoading3Quarters, AiOutlineUnorderedList } from 'react-icons/ai'
 import { FiSend } from 'react-icons/fi'
@@ -29,19 +29,21 @@ export interface ChatGPInstance {
   focus: () => void
 }
 
-const postChatOrQuestion = async (chat: Chat, messages: any[], input: string) => {
+// ✅ Modified to accept apiKey
+const postChatOrQuestion = async (chat: Chat, messages: any[], input: string, apiKey: string) => {
   const url = '/api/chat'
 
   const data = {
     prompt: chat?.persona?.prompt,
-    messages: [...messages!],
+    messages: [...messages],
     input
   }
 
   return await fetch(url, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey
     },
     body: JSON.stringify(data)
   })
@@ -52,25 +54,26 @@ const Chat = (props: ChatProps, ref: any) => {
     useContext(ChatContext)
 
   const [isLoading, setIsLoading] = useState(false)
-
-  const conversationRef = useRef<ChatMessage[]>()
-
+  const [apiKey, setApiKey] = useState('')
   const [message, setMessage] = useState('')
-
   const [currentMessage, setCurrentMessage] = useState<string>('')
 
-  const textAreaRef = useRef<HTMLElement>(null)
-
+  const conversationRef = useRef<ChatMessage[]>()
   const conversation = useRef<ChatMessage[]>([])
-
+  const textAreaRef = useRef<HTMLElement>(null)
   const bottomOfChatRef = useRef<HTMLDivElement>(null)
+
   const sendMessage = useCallback(
     async (e: any) => {
       if (!isLoading) {
         e.preventDefault()
         const input = sanitizeHtml(textAreaRef.current?.innerHTML || '')
-        if (input.length < 1) {
+        if (!input) {
           toast.error('Please type a message to continue.')
+          return
+        }
+        if (!apiKey) {
+          toast.error('API key is required.')
           return
         }
 
@@ -79,14 +82,11 @@ const Chat = (props: ChatProps, ref: any) => {
         setMessage('')
         setIsLoading(true)
         try {
-          const response = await postChatOrQuestion(currentChatRef?.current!, message, input)
+          const response = await postChatOrQuestion(currentChatRef?.current!, message, input, apiKey)
 
           if (response.ok) {
             const data = response.body
-
-            if (!data) {
-              throw new Error('No data')
-            }
+            if (!data) throw new Error('No data')
 
             const reader = data.getReader()
             const decoder = new TextDecoder('utf-8')
@@ -99,9 +99,7 @@ const Chat = (props: ChatProps, ref: any) => {
                 const char = decoder.decode(value)
                 if (char) {
                   setCurrentMessage((state) => {
-                    if (debug) {
-                      console.log({ char })
-                    }
+                    if (debug) console.log({ char })
                     resultContent = state + char
                     return resultContent
                   })
@@ -111,25 +109,20 @@ const Chat = (props: ChatProps, ref: any) => {
                 done = true
               }
             }
-            // The delay of timeout can not be 0 as it will cause the message to not be rendered in racing condition
+
             setTimeout(() => {
-              if (debug) {
-                console.log({ resultContent })
-              }
+              if (debug) console.log({ resultContent })
               conversation.current = [
                 ...conversation.current,
                 { content: resultContent, role: 'assistant' }
               ]
-
               setCurrentMessage('')
             }, 1)
           } else {
             const result = await response.json()
             if (response.status === 401) {
               conversation.current.pop()
-              location.href =
-                result.redirect +
-                `?callbackUrl=${encodeURIComponent(location.pathname + location.search)}`
+              toast.error(result.error)
             } else {
               toast.error(result.error)
             }
@@ -143,7 +136,7 @@ const Chat = (props: ChatProps, ref: any) => {
         }
       }
     },
-    [currentChatRef, debug, isLoading]
+    [currentChatRef, debug, isLoading, apiKey]
   )
 
   const handleKeypress = useCallback(
@@ -187,23 +180,22 @@ const Chat = (props: ChatProps, ref: any) => {
     }
   }, [isLoading])
 
-  useImperativeHandle(ref, () => {
-    return {
-      setConversation(messages: ChatMessage[]) {
-        conversation.current = messages
-        forceUpdate?.()
-      },
-      getConversation() {
-        return conversationRef.current
-      },
-      focus: () => {
-        textAreaRef.current?.focus()
-      }
+  useImperativeHandle(ref, () => ({
+    setConversation(messages: ChatMessage[]) {
+      conversation.current = messages
+      forceUpdate?.()
+    },
+    getConversation() {
+      return conversationRef.current
+    },
+    focus: () => {
+      textAreaRef.current?.focus()
     }
-  })
+  }))
 
   return (
     <Flex direction="column" height="100%" className="relative" gap="3">
+      {/* Header */}
       <Flex
         justify="center"
         align="center"
@@ -243,18 +235,30 @@ const Chat = (props: ChatProps, ref: any) => {
           </Heading>
         </Flex>
       </Flex>
-      <ScrollArea
-        className="flex-1 px-4"
-        type="auto"
-        scrollbars="vertical"
-        style={{ height: '100%' }}
-      >
+
+      {/* API Key Input */}
+      <Flex px="4" pt="2" direction="column" gap="2">
+        <TextField.Root>
+          <TextField.Input
+            type="password"
+            placeholder="Enter your API key"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            disabled={isLoading}
+          />
+        </TextField.Root>
+      </Flex>
+
+      {/* Chat Messages */}
+      <ScrollArea className="flex-1 px-4" type="auto" scrollbars="vertical">
         {conversation.current.map((item, index) => (
           <Message key={index} message={item} />
         ))}
         {currentMessage && <Message message={{ content: currentMessage, role: 'assistant' }} />}
         <div ref={bottomOfChatRef}></div>
       </ScrollArea>
+
+      {/* Input area */}
       <div className="px-4 pb-3">
         {conversation.current.length > 0 && (
           <Flex justify="start" mb="2">
@@ -277,25 +281,19 @@ const Chat = (props: ChatProps, ref: any) => {
           <div className="rt-TextAreaRoot rt-r-size-1 rt-variant-surface flex-1 rounded-3xl chat-textarea">
             <ContentEditable
               innerRef={textAreaRef}
-              style={{
-                minHeight: '24px',
-                maxHeight: '200px',
-                overflowY: 'auto'
-              }}
+              style={{ minHeight: '24px', maxHeight: '200px', overflowY: 'auto' }}
               className="rt-TextAreaInput text-base"
               html={message}
               disabled={isLoading}
               onChange={(e) => {
                 setMessage(sanitizeHtml(e.target.value))
               }}
-              onKeyDown={(e) => {
-                handleKeypress(e)
-              }}
+              onKeyDown={handleKeypress}
             />
             <div className="rt-TextAreaChrome"></div>
           </div>
           <Flex gap="3" className="absolute right-0 pr-4 bottom-2 pt">
-            {isLoading && (
+            {isLoading ? (
               <Flex
                 width="6"
                 height="6"
@@ -305,19 +303,19 @@ const Chat = (props: ChatProps, ref: any) => {
               >
                 <AiOutlineLoading3Quarters className="animate-spin size-5" />
               </Flex>
+            ) : (
+              <Tooltip content="Send Message">
+                <IconButton
+                  variant="soft"
+                  color="gray"
+                  size="2"
+                  className="rounded-xl cursor-pointer"
+                  onClick={sendMessage}
+                >
+                  <FiSend className="size-4" />
+                </IconButton>
+              </Tooltip>
             )}
-            <Tooltip content="Send Message">
-              <IconButton
-                variant="soft"
-                disabled={isLoading}
-                color="gray"
-                size="2"
-                className="rounded-xl cursor-pointer"
-                onClick={sendMessage}
-              >
-                <FiSend className="size-4" />
-              </IconButton>
-            </Tooltip>
           </Flex>
         </Flex>
       </div>
