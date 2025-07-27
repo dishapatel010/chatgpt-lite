@@ -10,9 +10,9 @@ export interface Message {
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('authorization')
-    const apiKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+    const uapiKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
-    if (!apiKey) {
+    if (!uapiKey) {
       return NextResponse.json(
         { success: false, error: 'Unauthorized: Missing Bearer token' },
         { status: 401 }
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await auth.api.verifyApiKey({
-      body: { key: apiKey }
+      body: { key: uapiKey }
     })
 
     if (!result?.valid) {
