@@ -1,8 +1,8 @@
-import { Analytics } from '@vercel/analytics/react'
 import { Metadata } from 'next'
 import { Toaster } from 'sonner'
 import { Header } from '@/components/Header'
 import ThemesProvider from '@/providers/ThemesProvider'
+import { Providers } from "./providers"
 
 import '@/styles/globals.scss'
 import '@/styles/theme-config.css'
@@ -26,10 +26,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemesProvider>
           <Header />
-          {children}
-          <Toaster position="top-center" toastOptions={{ style: { color: 'red' } }} />
+          <Providers>{children}</Providers>
+          <Toaster richColors={true} />
         </ThemesProvider>
-        <Analytics />
       </body>
     </html>
   )
