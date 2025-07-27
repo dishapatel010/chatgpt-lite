@@ -1,3 +1,6 @@
+"use server"
+
+import { auth } from '@/lib/auth'
 import { createParser, ParsedEvent, ReconnectInterval } from 'eventsource-parser'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -10,11 +13,22 @@ export interface Message {
 
 export async function POST(req: NextRequest) {
   try {
+    const apiKeyHeader = req.headers.get('x-api-key')
+    const result = await auth.api.verifyApiKey(apiKeyHeader)
+
+    if (!result?.valid) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized: Invalid or missing API key' },
+        { status: 401 }
+      )
+    }
+
     const { prompt, messages, input } = (await req.json()) as {
       prompt: string
       messages: Message[]
       input: string
     }
+
     const messagesWithHistory = [
       { content: prompt, role: 'system' },
       ...messages,
@@ -23,6 +37,7 @@ export async function POST(req: NextRequest) {
 
     const { apiUrl, apiKey, model } = getApiConfig()
     const stream = await getOpenAIStream(apiUrl, apiKey, model, messagesWithHistory)
+
     return new NextResponse(stream, {
       headers: { 'Content-Type': 'text/event-stream' }
     })
@@ -42,6 +57,7 @@ const getApiConfig = () => {
   let apiUrl: string
   let apiKey: string
   let model: string
+
   if (useAzureOpenAI) {
     let apiBaseUrl = process.env.AZURE_OPENAI_API_BASE_URL
     const apiVersion = process.env.AZURE_API_VERSION
@@ -51,7 +67,7 @@ const getApiConfig = () => {
     }
     apiUrl = `${apiBaseUrl}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`
     apiKey = process.env.AZURE_OPENAI_API_KEY || ''
-    model = '' // Azure Open AI always ignores the model and decides based on the deployment name passed through.
+    model = '' // Azure decides based on deployment name
   } else {
     let apiBaseUrl = process.env.OPENAI_API_BASE_URL || 'https://api.openai.com'
     if (apiBaseUrl && apiBaseUrl.endsWith('/')) {
@@ -131,7 +147,6 @@ const getOpenAIStream = async (
       const parser = createParser(onParse)
 
       for await (const chunk of res.body as any) {
-        // An extra newline is required to make AzureOpenAI work.
         const str = decoder.decode(chunk).replace('[DONE]\n', '[DONE]\n\n')
         parser.feed(str)
       }
