@@ -22,6 +22,7 @@
     "clsx": "^2.1.1",
     "eventsource-parser": "^2.0.0",
     "lodash-es": "^4.17.21",
+    "mongodb": "latest",
     "next": "15.2.3",
     "react": "^19.0.0",
     "react-contenteditable": "^3.3.7",
